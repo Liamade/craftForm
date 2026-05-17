@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CraftForm home region setup template. Provisions the necessary resources for the home region before the actions are set up.
+
+#====================================================================================================================
+#                                                 PARAMETERS
+#====================================================================================================================
+# set of necessary parameters for the home region setup - comes from the user input during stack creation
+#--------------------------------------------------------------------------------------------------------------------
+Parameters:
+  # where the home region will be set up
+  HomeRegion:
+    Type: String
+    Description: The AWS region where the CraftForm home region will be set up (e.g., us-east-1).
+    Default: us-east-1  # Default to us-east-1, but can be changed by the user during stack creation
+    AllowedValues:  # creates a dropdown in the CloudFormation console with the allowed regions for easier selection and to prevent typos
+      - us-east-1
+      - us-east-2
+      - us-west-1
+      - us-west-2
+      - ca-central-1
+      - eu-west-1
+      - eu-west-2
+      - eu-west-3
+      - eu-central-1
+      - eu-north-1
+      - eu-south-1
+      - ap-southeast-1
+      - ap-southeast-2
+      - ap-northeast-1
+      - ap-northeast-2
+      - ap-northeast-3
+      - ap-south-1
+      - sa-east-1
+      - af-south-1
+      - me-south-1
+
+  # discord parameters for the CraftForm bot
+  DiscordAppId:
+    Type: String
+    Description: The Discord Application ID for the CraftForm bot.
+    NoEcho: true  # Hide the value in the CloudFormation console for security
+  DiscordPublicKey:
+    Type: String
+    Description: The Discord Public Key for verifying interactions from Discord.
+    NoEcho: true  # Hide the value in the CloudFormation console for security
+  DiscordBotToken:
+    Type: String
+    Description: The Discord Bot Token for authenticating the CraftForm bot with Discord.
+    NoEcho: true  # Hide the value in the CloudFormation console for security
+
+  # Github parameters for the GitHub integration and cloning from the GitHub repository
+  GitHubPersonalAccessToken:
+    Type: String
+    Description: The GitHub Personal Access Token for authenticating with GitHub APIs.
+    NoEcho: true  # Hide the value in the CloudFormation console for security
+  GitHubUsername:
+    Type: String
+    Description: The GitHub Username associated with the Personal Access Token.
+
+
+#====================================================================================================================
+#                                                 RESOURCES
+#====================================================================================================================
+# set of necessary resources for the home region setup - develops the home region for discord and github integration, 
+# and the necessary infrastructure for the CraftForm bot to operate in the home region
+#--------------------------------------------------------------------------------------------------------------------
+
+Resources:
+  # OIDC PROVIDER - allows GitHub Actions to authenticate with AWS using OIDC tokens rather than secret access keys, which is more secure and eliminates the need to manage long-lived credentials for GitHub Actions in AWS. This OIDC provider will be used in the trust policy of the IAM role that GitHub Actions will assume when deploying to the home region.
+  GithubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider 
+    Properties:
+      Url: "https://token.actions.githubusercontent.com"  # OIDC provider URL for GitHub Actions
+      ClientIdList: # basically where GitHub Actions will be allowed to authenticate from
+        - "sts.amazonaws.com" 
+      ThumbprintList:
+      # Thumbprint for token.actions.githubusercontent.com
+        - "6938fd4d98bab03faadb97b34396831e3780aea1" 
+        - "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
+
+  # IAM ROLES - GITHUB ACTIONS
+  GithubActionsRole:
+    Type: AWS::IAM::Role
+    Properties: # configs for the IAM role that GitHub Actions will assume
+      # tags
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+      RoleName: "craftForm-github-actions"  # Name of the IAM role for GitHub Actions
+      AssumeRolePolicyDocument:  # who is allowed to assume this role - GithubActions
+        Version: "2012-10-17"
+        Statement:  # list of statements in the trust policy
+          - Effect: "Allow"
+            Principal: # who is allowed to assume this role
+              # reference the created OIDC provider for Github Actions - Get the ARN
+              Federated: !GetAtt GithubOIDCProvider.Arn
+
+            # allow assuming the role with web identity (OIDC token)
+            Action: "sts:AssumeRoleWithWebIdentity"
+
+            Condition:  # conditions for assuming the role
+              StringEquals:
+                # only accept token with this audience claim - that the token is meant for AWS STS
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                 # only accept tokens from this specific repo - where the token is coming from
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubUsername}/${GitHubRepo}:*"
+      
+      Policies:  # inline policies for the role - permissions that the role has
+        - PolicyName: "craftForm-github-actions-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # allow creatiion
+              - Effect: "Allow"
+                Action:
+                  - ec2:Create*
+                  - ec2:RunInstances
+                  - ec2:AllocateAddress
+                  - s3:CreateBucket
+                  - iam:CreateRole
+                  - iam:CreatePolicy
+                  - iam:CreateInstanceProfile
+                  - iam:AttachRolePolicy
+                  - iam:PassRole
+                Resource: "*"
+
+              # allow modification and desctruction of anything with specific craftForm tag
+              - Effect: "Allow"
+                Action:
+                  - "*"  # all actions
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    "aws:ResourceTag/craftForm": "true"  # only allow modification and deletion of resources tagged with craftForm=true
+
+              # allow full access to specefic SSM parameter path for CraftForm
+              - Effect: "Allow"
+                Action:
+                  - ssm:*
+                Resource: !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/craftform/*"
+
+              # allow full access to specific DynamoDB table for CraftForm
+              - Effect: "Allow"
+                Action:
+                  - dynamodb:*
+                Resource: !GetAtt TerraformLocksTable.Arn 
+
+              # allow full access to specefic S3 for CraftForm
+              - Effect: "Allow"
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  # bucket level permissions
+                  - !GetAtt TerraformStateBucket.Arn
+                  # object level permissions
+                  - !Sub "${TerraformStateBucket.Arn}/*"
