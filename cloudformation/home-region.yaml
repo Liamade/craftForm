@@ -79,7 +79,8 @@ Resources:
         - "6938fd4d98bab03faadb97b34396831e3780aea1" 
         - "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
 
-  # IAM ROLES - GITHUB ACTIONS
+  # ------------------------------------------IAM ROLES------------------------------------------
+  # github actions role
   GithubActionsRole:
     Type: AWS::IAM::Role
     Properties: # configs for the IAM role that GitHub Actions will assume
@@ -159,3 +160,45 @@ Resources:
                   - !GetAtt TerraformStateBucket.Arn
                   # object level permissions
                   - !Sub "${TerraformStateBucket.Arn}/*"
+
+  # lambda minimal role - execution role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      # tags
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+      RoleName: "craftForm-lambda-execution"  # Name of the IAM role for Lambda execution
+      AssumeRolePolicyDocument:  # who is allowed to assume this role - Lambda service
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "lambda.amazonaws.com"  # only Lambda service to assume this role
+            Action: "sts:AssumeRole"
+
+      Policies:  # inline policies for the role - permissions that the Lambda functions will have when executing
+        - PolicyName: "craftForm-lambda-execution-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # allow ssm read/write as well as secrete manager read
+              - Effect: "Allow"
+                Action:
+                  - ssm:GetParameter
+                  - ssm:PutParameter
+                  - ssm:GetParametersByPath
+                  - secretsmanager:GetSecretValue
+                Resource: 
+                  - !Sub "arn:aws:ssm:*:${AWS::AccountId}:parameter/craftform/*"  # allow access to SSM parameters under the craftform path
+                  - !Sub "arn:aws:secretsmanager:*:${AWS::AccountId}:secret:craftform/*"
+
+              # allow logging to CloudWatch Logs for Lambda functions - create log group, log stream, and put log events
+              - Effect: "Allow"
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+ 
