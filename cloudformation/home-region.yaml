@@ -89,6 +89,8 @@ Resources:
       Tags:
         - Key: "Project"
           Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
       RoleName: "craftForm-github-actions"  # Name of the IAM role for GitHub Actions
       AssumeRolePolicyDocument:  # who is allowed to assume this role - GithubActions
         Version: "2012-10-17"
@@ -170,6 +172,9 @@ Resources:
       Tags:
         - Key: "Project"
           Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+
       RoleName: "craftForm-lambda-execution"  # Name of the IAM role for Lambda execution
       AssumeRolePolicyDocument:  # who is allowed to assume this role - Lambda service
         Version: "2012-10-17"
@@ -206,10 +211,62 @@ Resources:
 
 
   # ------------------------------------------S3 STATE BUCKET------------------------------------------
+  TerraformStateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # globally unique name for the S3 bucket
+      BucketName: !Sub "craftform-terraform-state-${AWS::AccountId}"
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+
+      # enable versioning to keep track of changes to the Terraform state files
+      VersioningConfiguration:
+        Status: "Enabled"
+
+      # block public access to the bucket for security
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true     # prevent public ACLs from being set on the bucket or objects within the bucket
+        BlockPublicPolicy: true   # prevent public bucket policies from being applied to the bucket
+        IgnorePublicAcls: true    # ignore any public ACLs
+        RestrictPublicBuckets: true   # say no no to any public access to the bucket
+      
 
   # ------------------------------------------DYNAMODB TABLES------------------------------------------
-
+  TerraformLocksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "craftform-terraform-locks"
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+      AttributeDefinitions:
+        - AttributeName: "LockID"
+          AttributeType: "S"  # string type for the lock ID
+      KeySchema:
+        - AttributeName: "LockID"
+          KeyType: "HASH"  # partition key for the DynamoDB table
+      BillingMode: "PAY_PER_REQUEST"  # on-demand billing mode for the DynamoDB table
   # -------------------------------------------SECRET MANGER-------------------------------------------
+  # holds sensitive information like the Discord bot token and Github PAT, which are needed for the
+  # craftForm bot to operate
+  
+  CraftFormSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "craftform-secrets"
+      Description: "Secrets for CraftForm application, including Discord and GitHub credentials."
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+
+      SecretString: !Sub '{"DiscordBotToken": "${DiscordBotToken}", "GitHubPersonalAccessToken": "${GitHubPersonalAccessToken}"}'
 
   # -------------------------------------------SSM PARAMETERS------------------------------------------
 
