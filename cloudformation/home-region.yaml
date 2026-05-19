@@ -97,7 +97,7 @@ Resources:
         Statement:  # list of statements in the trust policy
           - Effect: "Allow"
             Principal: # who is allowed to assume this role
-              # reference the created OIDC provider for Github Actions - Get the ARN
+              # reference the created OIDC provider for Github Actions - Get the ARN (can't use !Ref here)
               Federated: !GetAtt GithubOIDCProvider.Arn
 
             # allow assuming the role with web identity (OIDC token)
@@ -207,8 +207,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "arn:aws:logs:*:*:*"
- 
-
 
   # ------------------------------------------S3 STATE BUCKET------------------------------------------
   TerraformStateBucket:
@@ -233,7 +231,6 @@ Resources:
         IgnorePublicAcls: true    # ignore any public ACLs
         RestrictPublicBuckets: true   # say no no to any public access to the bucket
       
-
   # ------------------------------------------DYNAMODB TABLES------------------------------------------
   TerraformLocksTable:
     Type: AWS::DynamoDB::Table
@@ -254,7 +251,7 @@ Resources:
   # -------------------------------------------SECRET MANGER-------------------------------------------
   # holds sensitive information like the Discord bot token and Github PAT, which are needed for the
   # craftForm bot to operate
-  
+
   CraftFormSecrets:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -269,6 +266,108 @@ Resources:
       SecretString: !Sub '{"DiscordBotToken": "${DiscordBotToken}", "GitHubPersonalAccessToken": "${GitHubPersonalAccessToken}"}'
 
   # -------------------------------------------SSM PARAMETERS------------------------------------------
+  # HOME REGION PARAMETER
+  HomeRegionParameter:
+  Type: AWS::SSM::Parameter
+  Properties:
+    Name: "/craftform/config/home-region"
+    Type: "String"
+    Value: !Ref HomeRegion
+    Description: "Home AWS region for CraftForm"
+    Tags:
+      Project: "craftForm"
+      Environment: "HomeRegion"
+# GITHUB PARAMETERS:
+  GithubUsernameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/github/username"
+      Type: "String"
+      Value: !Ref GitHubUsername
+      Description: "GitHub username for CraftForm integration"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+
+# DISCORD PARAMETERS:
+  DiscordAppIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/discord/app-id"
+      Type: "String"
+      Value: !Ref DiscordAppId
+      Description: "Discord Application ID for CraftForm bot"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+  DiscordPublicKeyParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/discord/public-key"
+      Type: "String"
+      Value: !Ref DiscordPublicKey
+      Description: "Discord Public Key for CraftForm bot"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+
+  # STATE FILE PARAMETERS:
+  S3StateBucketParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/terraform/state-bucket"
+      Type: "String"
+      Value: !Ref TerraformStateBucket
+      Description: "Name of the S3 bucket for Terraform state files"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+  DynamoDBLocksTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/terraform/locks-table"
+      Type: "String"
+      Value: !Ref TerraformLocksTable
+      Description: "Name of the DynamoDB table for Terraform locks"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+
+  # API GATEWAY PARAMETER:
+  APIGatewayEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/api-gateway/endpoint"
+      Type: "String"
+      Value: ""  # NEED TO UPDATE THIS VALUE WHEN API GATEWAY IS CREATED
+      Description: "API Gateway endpoint URL for CraftForm bot interactions"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+
+  # IAM ROLE PARAMETERS:  
+  GithubActionsRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/iam/github-actions-role-arn"
+      Type: "String"
+      Value: !GetAtt GithubActionsRole.Arn  # get the ARN of the GitHub Actions role
+      Description: "ARN of the IAM role for GitHub Actions to assume when deploying to the home region"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
+  
+  # SECRETS MANAGER PARAMETERS:
+  CraftFormSecretsArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/secrets/arn"
+      Type: "String"
+      Value: !Ref CraftFormSecrets  # get the ARN of the Secrets Manager secret
+      Description: "ARN of the Secrets Manager secret that holds CraftForm secrets"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
 
   # --------------------------------------------API GATEWAY--------------------------------------------
 
