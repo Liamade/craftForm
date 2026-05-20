@@ -268,15 +268,15 @@ Resources:
   # -------------------------------------------SSM PARAMETERS------------------------------------------
   # HOME REGION PARAMETER
   HomeRegionParameter:
-  Type: AWS::SSM::Parameter
-  Properties:
-    Name: "/craftform/config/home-region"
-    Type: "String"
-    Value: !Ref HomeRegion
-    Description: "Home AWS region for CraftForm"
-    Tags:
-      Project: "craftForm"
-      Environment: "HomeRegion"
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: "/craftform/config/home-region"
+      Type: "String"
+      Value: !Ref HomeRegion
+      Description: "Home AWS region for CraftForm"
+      Tags:
+        Project: "craftForm"
+        Environment: "HomeRegion"
       
   # GITHUB PARAMETERS:
   GithubUsernameParameter:
@@ -438,14 +438,19 @@ Resources:
       Code: 
         ZipFile: |
           def handler(event, context):
-              #------------------INJECTED VARIABLES------------------
+              #------------------INJECTED VARIABLES-----------------
               envVars = event["ResourceProperties"]
               api_url = envVars["ApiGatewayUrl"]
               role_arn = envVars["GithubActionsRoleArn"]
               github_username = envVars["GitHubUsername"]
               discord_app_id = envVars["DiscordAppId"]
               #----------------------ACTUAL CODE--------------------
-              
+
+              print(f"API Gateway URL: {api_url}")
+              print(f"GitHub Actions Role ARN: {role_arn}")
+              print(f"GitHub Username: {github_username}")
+              print(f"Discord App ID: {discord_app_id}")
+              #-------------------RETURN STATUS--------------------
               return {
                   "Status": "SUCCESS",
                   "PhysicalResourceId": "craftform-startup",
