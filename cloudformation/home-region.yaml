@@ -109,7 +109,7 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
               StringLike:
                  # only accept tokens from this specific repo - where the token is coming from
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubUsername}/${GitHubRepo}:*"
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubUsername}/craftForm:*"
       
       Policies:  # inline policies for the role - permissions that the role has
         - PolicyName: "craftForm-github-actions-policy"
@@ -137,7 +137,7 @@ Resources:
                 Resource: "*"
                 Condition:
                   StringEquals:
-                    "aws:ResourceTag/craftForm": "true"  # only allow modification and deletion of resources tagged with craftForm=true
+                    "aws:ResourceTag/Project": "craftForm"  # only allow modification and deletion of resources tagged with Project=craftForm
 
               # allow full access to specefic SSM parameter path for CraftForm
               - Effect: "Allow"
@@ -277,7 +277,8 @@ Resources:
     Tags:
       Project: "craftForm"
       Environment: "HomeRegion"
-# GITHUB PARAMETERS:
+      
+  # GITHUB PARAMETERS:
   GithubUsernameParameter:
     Type: AWS::SSM::Parameter
     Properties:
@@ -339,7 +340,7 @@ Resources:
     Properties:
       Name: "/craftform/config/api-gateway/endpoint"
       Type: "String"
-      Value: ""  # NEED TO UPDATE THIS VALUE WHEN API GATEWAY IS CREATED
+      Value: !Sub "https://${DiscordApiGateway}.execute-api.${AWS::Region}.amazonaws.com"  # construct the API Gateway endpoint URL using the API ID and region
       Description: "API Gateway endpoint URL for CraftForm bot interactions"
       Tags:
         Project: "craftForm"
@@ -370,7 +371,120 @@ Resources:
         Environment: "HomeRegion"
 
   # --------------------------------------------API GATEWAY--------------------------------------------
+  DiscordApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: "CraftFormDiscordAPI"
+      Description: "API Gateway for handling Discord interactions with the CraftForm Discord bot."
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+      ProtocolType: "HTTP"  # Use HTTP API for lower latency and simpler setup
+
+  # INTEGRATION - what connects the Gateway to the resource (Lambda function)
+  DiscordApiGatewayIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref DiscordApiGateway
+      IntegrationType: "AWS_PROXY"  # Use AWS_PROXY to integrate directly with the Lambda function
+      # route all requests from the API Gateway to the OperationFunction Lambda
+      IntegrationUri: !GetAtt OperationFunction.Arn
+      PayloadFormatVersion: "2.0"  # use latest HTTP payload format
+
+  # ROUTE - basically a router for certain inputs that the Gateway receives and calls an integration
+  DiscordApiGatewayRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref DiscordApiGateway
+      RouteKey: "POST /discord"  # route for handling Discord interactions - only POST requests
+      Target: !Sub "integrations/${DiscordApiGatewayIntegration}"  # target the integration
+
+  # STAGE - gives a stable and clean URL for the Gateway that Discord can hit
+  DiscordApiGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref DiscordApiGateway
+      StageName: $default # gives a default stage for the API Gateway - stable and clean URL
+      AutoDeploy: true  # automatically deploy changes to the API Gateway
+
+  # PERMISSION - allow the Gateway to invoke the Lambda function
+  DiscordApiGatewayPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OperationFunction  # what function the gatewa is allowed to invoke
+      Action: "lambda:InvokeFunction" # what action the gateway is allowed to do to the function - invoke it
+      Principal: "apigateway.amazonaws.com" # who is allowed to do the action - API Gateway service
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DiscordApiGateway}/*/*"   # only allow this specific API Gateway to invoke
+
 
   # -----------------------------------------LAMBDA FUNCTIONS------------------------------------------
+  StartUpFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: DiscordApiGateway  # ensure the API Gateway is created before the Lambda function because cloudformation can't infer this
+    Properties:
+      FunctionName: "craftForm-startup-function"
+      Description: "Lambda function to perform startup tasks for CraftForm, such as forking craftForm repo, and registering commands to discord"
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+      Timeout: 60  # set a longer timeout for the startup function
+      Runtime: "python3.12"  # runtime for the Lambda function
+      Handler: "index.handler"  # handler for the Lambda function
+      Role: !GetAtt LambdaExecutionRole.Arn  # execution role for the Lambda function
+      Code: 
+        ZipFile: |
+          def handler(event, context):
+              #------------------INJECTED VARIABLES------------------
+              envVars = event["ResourceProperties"]
+              api_url = envVars["ApiGatewayUrl"]
+              role_arn = envVars["GithubActionsRoleArn"]
+              github_username = envVars["GitHubUsername"]
+              discord_app_id = envVars["DiscordAppId"]
+              #----------------------ACTUAL CODE--------------------
+              
+              return {
+                  "Status": "SUCCESS",
+                  "PhysicalResourceId": "craftform-startup",
+                  "Data": {
+                      "ApiGatewayUrl": api_url
+                  }
+              }
 
+  OperationFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: "craftForm-operation-function"
+      Description: "Lambda function to handle operations for CraftForm, such as handling Discord interactions and executing Terraform commands"
+      Tags:
+        - Key: "Project"
+          Value: "craftForm"
+        - Key: "Environment"
+          Value: "HomeRegion"
+      Timeout: 30  # timeout for the operation function - basically just to trigger a workflow
+      Runtime: "python3.12"  # runtime for the Lambda function
+      Handler: "index.handler"  # handler for the Lambda function
+      Role: !GetAtt LambdaExecutionRole.Arn  # execution role for the Lambda function
+      Code: 
+        S3Bucket: "craftform-releases"
+        S3Key: "lambda/operations.zip"
+
+
+
+              
   # ------------------------------------------RESOURCE TRIGGER-----------------------------------------
+  # trigger the startup Lambda function to perform necessary startup tasks after the stack is created 
+  # and the API Gateway is set up
+  StartupTrigger:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt StartUpFunction.Arn   # run this function after the stack is created
+
+      # Values to pass to the Lambda function
+      ApiGatewayUrl: !Sub "https://${DiscordApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
+      GithubActionsRoleArn: !GetAtt GithubActionsRole.Arn
+      DiscordAppId: !Ref DiscordAppId
+      GitHubUsername: !Ref GitHubUsername
