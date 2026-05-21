@@ -8,33 +8,7 @@ Description: >
 # set of necessary parameters for the home region setup - comes from the user input during stack creation
 #--------------------------------------------------------------------------------------------------------------------
 Parameters:
-  # where the home region will be set up
-  HomeRegion:
-    Type: String
-    Description: The AWS region where the CraftForm home region will be set up (e.g., us-east-1).
-    Default: us-east-1  # Default to us-east-1, but can be changed by the user during stack creation
-    AllowedValues:  # creates a dropdown in the CloudFormation console with the allowed regions for easier selection and to prevent typos
-      - us-east-1
-      - us-east-2
-      - us-west-1
-      - us-west-2
-      - ca-central-1
-      - eu-west-1
-      - eu-west-2
-      - eu-west-3
-      - eu-central-1
-      - eu-north-1
-      - eu-south-1
-      - ap-southeast-1
-      - ap-southeast-2
-      - ap-northeast-1
-      - ap-northeast-2
-      - ap-northeast-3
-      - ap-south-1
-      - sa-east-1
-      - af-south-1
-      - me-south-1
-
+  
   # discord parameters for the CraftForm bot
   DiscordAppId:
     Type: String
@@ -272,7 +246,7 @@ Resources:
     Properties:
       Name: "/craftform/config/home-region"
       Type: "String"
-      Value: !Ref HomeRegion
+      Value: !Sub "${AWS::Region}"  # set the value of the home region parameter
       Description: "Home AWS region for CraftForm"
       Tags:
         Project: "craftForm"
@@ -437,21 +411,44 @@ Resources:
         ZipFile: |
           import json
           import urllib3
+
           def handler(event, context):
-            def handler(event, context):
-            http = urllib3.PoolManager()
-            response = {
-                "Status": "SUCCESS",
-                "PhysicalResourceId": "craftform-startup",
-                "StackId": event["StackId"],
-                "RequestId": event["RequestId"],
-                "LogicalResourceId": event["LogicalResourceId"]
-            }
-            http.request(
-                "PUT",
-                event["ResponseURL"],
-                body=json.dumps(response)
-            )
+              http = urllib3.PoolManager()
+              
+              props = event["ResourceProperties"]
+              api_url = props["ApiGatewayUrl"]
+              role_arn = props["GithubActionsRoleArn"]
+              github_username = props["GitHubUsername"]
+              discord_app_id = props["DiscordAppId"]
+              
+              print(f"API Gateway URL: {api_url}")
+              print(f"GitHub Username: {github_username}")
+              print(f"Discord App ID: {discord_app_id}")
+              
+              try:
+                  response = {
+                      "Status": "SUCCESS",
+                      "PhysicalResourceId": "craftform-startup",
+                      "StackId": event["StackId"],
+                      "RequestId": event["RequestId"],
+                      "LogicalResourceId": event["LogicalResourceId"]
+                  }
+              except Exception as e:
+                  response = {
+                      "Status": "FAILED",
+                      "Reason": str(e),
+                      "PhysicalResourceId": "craftform-startup",
+                      "StackId": event["StackId"],
+                      "RequestId": event["RequestId"],
+                      "LogicalResourceId": event["LogicalResourceId"]
+                  }
+              
+              http.request(
+                  "PUT",
+                  event["ResponseURL"],
+                  body=json.dumps(response),
+                  headers={"Content-Type": "application/json"}
+              )
 
   OperationFunction:
     Type: AWS::Lambda::Function
@@ -479,9 +476,9 @@ Resources:
   # and the API Gateway is set up
   StartupTrigger:
     Type: AWS::CloudFormation::CustomResource
+    ServiceTimeout: 120 # set a timeout for the custom resource
     Properties:
       ServiceToken: !GetAtt StartUpFunction.Arn   # run this function after the stack is created
-
       # Values to pass to the Lambda function
       ApiGatewayUrl: !Sub "https://${DiscordApiGateway}.execute-api.${AWS::Region}.amazonaws.com"
       GithubActionsRoleArn: !GetAtt GithubActionsRole.Arn
