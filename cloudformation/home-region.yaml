@@ -476,7 +476,6 @@ Resources:
   # and the API Gateway is set up
   StartupTrigger:
     Type: AWS::CloudFormation::CustomResource
-    ServiceTimeout: 120 # set a timeout for the custom resource
     Properties:
       ServiceToken: !GetAtt StartUpFunction.Arn   # run this function after the stack is created
       # Values to pass to the Lambda function
