@@ -185,9 +185,10 @@ Resources:
   # ------------------------------------------S3 STATE BUCKET------------------------------------------
   TerraformStateBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Delete  # delete the bucket when the stack is deleted
     Properties:
       # globally unique name for the S3 bucket
-      BucketName: !Sub "craftform-terraform-state-${AWS::AccountId}"
+      BucketName: !Sub "craftform-tf-state-${AWS::AccountId}"
       Tags:
         - Key: "Project"
           Value: "craftForm"
@@ -209,7 +210,7 @@ Resources:
   TerraformLocksTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: "craftform-terraform-locks"
+      TableName: "craftform-tf-locks"
       Tags:
         - Key: "Project"
           Value: "craftForm"
@@ -467,8 +468,6 @@ Resources:
       Code: 
         S3Bucket: "craftform-releases"
         S3Key: "lambda-operations/operations.zip"
-
-
 
               
   # ------------------------------------------RESOURCE TRIGGER-----------------------------------------
