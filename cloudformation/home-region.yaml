@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  CraftForm home region setup template. Provisions the necessary resources for the home region before the actions are set up.
+  Develops and provisions the CraftForm home region (home base) that all infrastructure and resources are deployed/managed from. This also 
+  sets up the connections and integrations with Discord and Github, as well as the Github Actions CI/CD pipeline.
 
 #====================================================================================================================
 #                                                 PARAMETERS
